@@ -5,13 +5,15 @@
 import Foundation
 
 /// Each session is a communication channel between dApp and Wallet on dAppInfo.peerId topic
-public struct Session: Codable {
+public struct Session: Codable, Identifiable {
     // TODO: handle protocol version
+    public let id: Int
     public let url: WCURL
     public let dAppInfo: DAppInfo
     public var walletInfo: WalletInfo?
 
     public init(url: WCURL, dAppInfo: DAppInfo, walletInfo: WalletInfo?) {
+        self.id = url.hashValue
         self.url = url
         self.dAppInfo = dAppInfo
         self.walletInfo = walletInfo
@@ -41,7 +43,7 @@ public struct Session: Codable {
     public struct ClientMeta: Codable, Equatable {
         public let name: String
         public let description: String?
-        public let icons: [URL]
+        public let icons: [URL]?
         public let url: URL
         public let scheme: String?
 

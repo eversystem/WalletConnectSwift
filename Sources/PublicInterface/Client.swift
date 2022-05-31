@@ -8,7 +8,8 @@ public protocol ClientDelegate: AnyObject {
     func client(_ client: Client, didFailToConnect url: WCURL)
     func client(_ client: Client, didConnect url: WCURL)
     func client(_ client: Client, didConnect session: Session)
-    func client(_ client: Client, didDisconnect session: Session)
+    func client(_ client: Client, didSubscribe url: WCURL)
+    func client(_ client: Client, didDisconnect session: Session, isReconnecting: Bool)
     func client(_ client: Client, didUpdate session: Session)
 }
 
@@ -193,6 +194,7 @@ public class Client: WalletConnect {
                 self.handleHandshakeResponse(response)
             }
             communicator.send(request, topic: url.topic)
+            delegate?.client(self, didSubscribe: url)
         }
     }
 
@@ -242,9 +244,10 @@ public class Client: WalletConnect {
             if !info.approved {
                 do {
                     try disconnect(from: session)
-                } catch { // session already disconnected
-                    delegate?.client(self, didDisconnect: session)
+                } catch {
+                    // session already disconnected
                 }
+                delegate?.client(self, didDisconnect: session, isReconnecting: false)
             } else {
                 // we do not add sessions without walletInfo
                 let walletInfo = session.walletInfo!
@@ -279,7 +282,10 @@ public class Client: WalletConnect {
 
     override func sendDisconnectSessionRequest(for session: Session) throws {
         let dappInfo = session.dAppInfo.with(approved: false)
-        let request = try Request(url: session.url, method: "wc_sessionUpdate", params: [dappInfo], id: nil)
+        let request = try Request(url: session.url,
+                                  method: "wc_sessionUpdate",
+                                  params: [dappInfo],
+                                  id: Request.payloadId())
         try send(request, completion: nil)
     }
 
@@ -287,8 +293,8 @@ public class Client: WalletConnect {
         delegate?.client(self, didFailToConnect: url)
     }
 
-    override func didDisconnect(_ session: Session) {
-        delegate?.client(self, didDisconnect: session)
+    override func didDisconnect(_ session: Session, isReconnecting: Bool) {
+        delegate?.client(self, didDisconnect: session, isReconnecting: isReconnecting)
     }
 
     /// Thread-safe collection of client reponses
