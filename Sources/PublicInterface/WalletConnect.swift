@@ -2,13 +2,7 @@
 //  Copyright © 2019 Gnosis Ltd. All rights reserved.
 //
 
-import Foundation
-
 open class WalletConnect {
-    private let reconnectTimeoutMillis: Int64 = 1000
-    private var lastReconnectTry: Int64 = 0
-    private let reconnectQueue = DispatchQueue(label: "org.walletconnect.swift.reconnect")
-    
     var communicator = Communicator()
 
     public init() {}
@@ -39,29 +33,34 @@ open class WalletConnect {
         guard session.walletInfo != nil else {
             throw WalletConnectError.missingWalletInfoInSession
         }
-        
-        // checking last reconnect try timing to prevent spamreconnects
-        let current = Int64((Date().timeIntervalSince1970 * 1000.0).rounded())
-        let timePast = current - lastReconnectTry - reconnectTimeoutMillis
-        let delay = Double(timePast > 0 ? 0 : -timePast)/1000
-        reconnectQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.lastReconnectTry = Int64((Date().timeIntervalSince1970 * 1000.0).rounded())
-            self?.communicator.addOrUpdateSession(session)
-            self?.listen(on: session.url)
-        }
+        communicator.addOrUpdateSession(session)
+        listen(on: session.url)
     }
 
     /// Disconnect from session.
     ///
     /// - Parameter session: Session object
     /// - Throws: error on trying to disconnect inacative sessoin.
-    open func disconnect(from session: Session) throws {
-        guard communicator.isConnected(by: session.url) else {
+  open func disconnect(from session: Session, async: Bool = false) throws {
+        
+    guard communicator.isConnected(by: session.url) else {
             throw WalletConnectError.tryingToDisconnectInactiveSession
         }
-        try sendDisconnectSessionRequest(for: session)
+    
+    if !async{
+      try sendDisconnectSessionRequest(for: session)
+    } else {
+      try sendDisconnectSessionRequestAsync(for: session)
+    }
+    
         communicator.addOrUpdatePendingDisconnectSession(session)
-        communicator.disconnect(from: session.url)
+
+    if !async{
+      communicator.disconnect(from: session.url)
+    } else {
+      communicator.disconnectAsync(from: session.url)
+    }
+    
     }
 
     /// Get all sessions with active connection.
@@ -110,13 +109,12 @@ open class WalletConnect {
         guard communicator.pendingDisconnectSession(by: url) != nil else {
             // TODO: should we notify delegate that we try to reconnect?
             LogService.shared.log("WC: trying to reconnect session by url: \(url.bridgeURL.absoluteString)")
-            didDisconnect(session, isReconnecting: true)
             try! reconnect(to: session)
             return
         }
         communicator.removeSession(by: url)
         communicator.removePendingDisconnectSession(by: url)
-        didDisconnect(session, isReconnecting: false)
+        didDisconnect(session)
     }
 
     /// Process incomming text messages from the transport layer.
@@ -128,15 +126,19 @@ open class WalletConnect {
         preconditionFailure("Should be implemented in subclasses")
     }
 
-    func sendDisconnectSessionRequest(for session: Session) throws {
-        preconditionFailure("Should be implemented in subclasses")
-    }
+  func sendDisconnectSessionRequest(for session: Session) throws {
+    preconditionFailure("Should be implemented in subclasses")
+  }
+  
+  func sendDisconnectSessionRequestAsync(for session: Session) throws {
+    preconditionFailure("Should be implemented in subclasses")
+  }
 
     func failedToConnect(_ url: WCURL) {
         preconditionFailure("Should be implemented in subclasses")
     }
 
-    func didDisconnect(_ session: Session, isReconnecting: Bool) {
+    func didDisconnect(_ session: Session) {
         preconditionFailure("Should be implemented in subclasses")
     }
 

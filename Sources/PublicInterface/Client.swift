@@ -8,8 +8,7 @@ public protocol ClientDelegate: AnyObject {
     func client(_ client: Client, didFailToConnect url: WCURL)
     func client(_ client: Client, didConnect url: WCURL)
     func client(_ client: Client, didConnect session: Session)
-    func client(_ client: Client, didSubscribe url: WCURL)
-    func client(_ client: Client, didDisconnect session: Session, isReconnecting: Bool)
+    func client(_ client: Client, didDisconnect session: Session)
     func client(_ client: Client, didUpdate session: Session)
 }
 
@@ -50,6 +49,26 @@ public class Client: WalletConnect {
         }
         communicator.send(request, topic: walletInfo.peerId)
     }
+  
+  /// Send ASYNC request to wallet.
+  ///
+  /// - Parameters:
+  ///   - request: Request object.
+  ///   - completion: RequestResponse completion.
+  /// - Throws: Client error.
+  public func sendAsync(_ request: Request, completion: RequestResponse?) throws {
+    guard let session = communicator.session(by: request.url) else {
+      throw ClientError.sessionNotFound
+    }
+    guard let walletInfo = session.walletInfo else {
+      throw ClientError.missingWalletInfoInSession
+    }
+    if let completion = completion, let requestID = request.internalID, requestID != .null {
+      responses.add(requestID: requestID, response: completion)
+    }
+    communicator.sendAsync(request, topic: walletInfo.peerId)
+  }
+
 
     /// Send response to wallet.
     ///
@@ -194,7 +213,6 @@ public class Client: WalletConnect {
                 self.handleHandshakeResponse(response)
             }
             communicator.send(request, topic: url.topic)
-            delegate?.client(self, didSubscribe: url)
         }
     }
 
@@ -242,12 +260,15 @@ public class Client: WalletConnect {
             guard let session = communicator.session(by: request.url) else { return }
 
             if !info.approved {
+        //we got a session update with approved false, so the session are alreasy closed from the other side...
+        //calling disconnect(from: session) here cause a timeout error and add several delay to the disconnect callback. So we use async param to avoid delay
                 do {
-                    try disconnect(from: session)
-                } catch {
-                    // session already disconnected
+                    try disconnect(from: session, async: true)
+                } catch let error { // session already disconnected
+          LogService.shared.log("session already disconnected: \(error)")
                 }
-                delegate?.client(self, didDisconnect: session, isReconnecting: false)
+        delegate?.client(self, didDisconnect: session)
+
             } else {
                 // we do not add sessions without walletInfo
                 let walletInfo = session.walletInfo!
@@ -280,21 +301,24 @@ public class Client: WalletConnect {
         }
     }
 
-    override func sendDisconnectSessionRequest(for session: Session) throws {
-        let dappInfo = session.dAppInfo.with(approved: false)
-        let request = try Request(url: session.url,
-                                  method: "wc_sessionUpdate",
-                                  params: [dappInfo],
-                                  id: Request.payloadId())
-        try send(request, completion: nil)
-    }
+  override func sendDisconnectSessionRequest(for session: Session) throws {
+    let dappInfo = session.dAppInfo.with(approved: false)
+    let request = try Request(url: session.url, method: "wc_sessionUpdate", params: [dappInfo], id: nil)
+    try send(request, completion: nil)
+  }
+  
+  override func sendDisconnectSessionRequestAsync(for session: Session) throws {
+    let dappInfo = session.dAppInfo.with(approved: false)
+    let request = try Request(url: session.url, method: "wc_sessionUpdate", params: [dappInfo], id: nil)
+    try send(request, completion: nil)
+  }
 
     override func failedToConnect(_ url: WCURL) {
         delegate?.client(self, didFailToConnect: url)
     }
 
-    override func didDisconnect(_ session: Session, isReconnecting: Bool) {
-        delegate?.client(self, didDisconnect: session, isReconnecting: isReconnecting)
+    override func didDisconnect(_ session: Session) {
+        delegate?.client(self, didDisconnect: session)
     }
 
     /// Thread-safe collection of client reponses

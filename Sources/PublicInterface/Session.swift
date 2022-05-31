@@ -5,15 +5,13 @@
 import Foundation
 
 /// Each session is a communication channel between dApp and Wallet on dAppInfo.peerId topic
-public struct Session: Codable, Identifiable {
+public struct Session: Codable {
     // TODO: handle protocol version
-    public let id: Int
     public let url: WCURL
     public let dAppInfo: DAppInfo
     public var walletInfo: WalletInfo?
 
     public init(url: WCURL, dAppInfo: DAppInfo, walletInfo: WalletInfo?) {
-        self.id = url.hashValue
         self.url = url
         self.dAppInfo = dAppInfo
         self.walletInfo = walletInfo
@@ -40,21 +38,40 @@ public struct Session: Codable, Identifiable {
         }
     }
 
-    public struct ClientMeta: Codable, Equatable {
-        public let name: String
-        public let description: String?
-        public let icons: [URL]?
-        public let url: URL
-        public let scheme: String?
-
-        public init(name: String, description: String?, icons: [URL], url: URL, scheme: String? = nil) {
-            self.name = name
-            self.description = description
-            self.icons = icons
-            self.url = url
-            self.scheme = scheme
+  public struct ClientMeta: Codable, Equatable {
+    public let name: String
+    public let description: String?
+    public let iconsStr: [String]?
+    public var icons: [URL] {
+      var urls: [URL] = []
+      for iconStr in iconsStr ?? [] {
+        if let u = URL(string: iconStr) {
+          urls.append(u)
         }
+      }
+      return urls
     }
+    public let url: URL?
+    public let scheme: String?
+
+    enum CodingKeys: String, CodingKey {
+      case name = "name"
+      case description = "description"
+      case iconsStr = "icons"
+      case url = "url"
+      case scheme = "scheme"
+    }
+
+    public init(name: String, description: String?, icons: [URL], url: URL, scheme: String? = nil) {
+      self.name = name
+      self.description = description
+      self.iconsStr = icons.map({ url in
+        url.absoluteString
+      })
+      self.url = url
+      self.scheme = scheme
+    }
+  }
 
     public struct WalletInfo: Codable, Equatable {
         public let approved: Bool
